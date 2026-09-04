@@ -1,0 +1,37 @@
+{
+    "name": "ipa-server",
+    "description": "Deploy ipa-server on Heroku.",
+    "keywords": [
+        "ipa-server"
+    ],
+    "env": {
+        "PUBLIC_URL": {
+            "description": "public URL for this server, empty to use $DOMAIN",
+            "required": false,
+            "value": ""
+        },
+        "REMOTE": {
+            "description": "remote storager config, s3://ENDPOINT:AK:SK:BUCKET, alioss://ENDPOINT:AK:SK:BUCKET, qiniu://[ZONE]:AK:SK:BUCKET",
+            "required": false,
+            "value": ""
+        },
+        "REMOTE_URL": {
+            "description": "remote storager public url, https://cdn.example.com",
+            "required": false,
+            "value": ""
+        },
+        "DELETE_ENABLED": {
+            "description": "delete app enabled, true/false",
+            "required": false,
+            "value": "false"
+        },
+        "META_PATH": {
+            "description": "option, metadata storage path, use random secret path to keep your metadata safer in case of remote storage",
+            "required": false,
+            "value": ""
+        }
+    },
+    "website": "https://github.com/iineva/ipa-server",
+    "repository": "https://github.com/iineva/ipa-server",
+    "stack": "container"
+}
