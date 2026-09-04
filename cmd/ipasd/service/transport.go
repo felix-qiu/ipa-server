@@ -1,224 +1,303 @@
 package service
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
-	"path/filepath"
-	"regexp"
 	"strings"
 
-	"github.com/go-kit/kit/endpoint"
 	"github.com/iineva/ipa-server/pkg/common"
-	pkgMultipart "github.com/iineva/ipa-server/pkg/multipart"
 	"github.com/iineva/ipa-server/pkg/seekbuf"
 )
 
-type param struct {
-	publicURL string
-	id        string
+type APIHandler struct {
+	srv           Service
+	uploadEnabled bool
+	deleteEnabled bool
 }
 
-type delParam struct {
-	publicURL string
-	id        string
-	get       bool // get if delete enabled
+func NewAPIHandler(srv Service, uploadEnabled, deleteEnabled bool) http.Handler {
+	return &APIHandler{srv: srv, uploadEnabled: uploadEnabled, deleteEnabled: deleteEnabled}
 }
 
-type addParam struct {
-	file *pkgMultipart.FormFile
-}
-
-type data interface{}
-type response struct {
-	data
-	Err string `json:"err"`
-}
-
-var (
-	ErrIdInvalid = errors.New("id invalid")
-)
-
-func MakeListEndpoint(srv Service, uploadDisabled bool) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		p := request.(param)
-		return srv.List(p.publicURL, uploadDisabled)
-	}
-}
-
-func MakeFindEndpoint(srv Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		p := request.(param)
-		return srv.Find(p.id, p.publicURL)
-	}
-}
-
-func MakeAddEndpoint(srv Service, uploadDisabled bool) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		if !uploadDisabled {
-			return nil, errors.New("upload was disabled")
+func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	switch {
+	case r.URL.Path == "/api/projects":
+		h.projects(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/projects/"):
+		h.project(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/releases/"):
+		h.release(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/info/") && r.Method == http.MethodGet:
+		id := path.Base(r.URL.Path)
+		v, err := h.srv.GetRelease(id, publicURL(r))
+		h.write(w, v, err, http.StatusOK)
+	case r.URL.Path == "/api/list" && r.Method == http.MethodGet:
+		projects, err := h.srv.ListProjects(publicURL(r))
+		h.write(w, map[string]interface{}{"projects": projects, "uploadEnabled": h.uploadEnabled, "deleteEnabled": h.deleteEnabled}, err, http.StatusOK)
+	case r.URL.Path == "/api/delete/get" && r.Method == http.MethodGet:
+		h.write(w, map[string]bool{"delete": h.deleteEnabled}, nil, http.StatusOK)
+	case r.URL.Path == "/api/delete" && r.Method == http.MethodPost:
+		if !h.deleteEnabled {
+			h.write(w, nil, errors.New("no permission to delete"), http.StatusForbidden)
+			return
 		}
+		var body struct {
+			ID string `json:"id"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err == nil {
+			err = h.srv.DeleteRelease(body.ID)
+		}
+		h.write(w, map[string]string{"msg": "ok"}, err, http.StatusOK)
+	default:
+		h.write(w, nil, errors.New("not found"), http.StatusNotFound)
+	}
+}
 
-		p := request.(addParam)
-		buf, err := seekbuf.Open(p.file, seekbuf.FileMode)
+func (h *APIHandler) projects(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		projects, err := h.srv.ListProjects(publicURL(r))
+		h.write(w, map[string]interface{}{"projects": projects, "uploadEnabled": h.uploadEnabled, "deleteEnabled": h.deleteEnabled}, err, http.StatusOK)
+	case http.MethodPost:
+		if !h.uploadEnabled {
+			h.write(w, nil, errors.New("project creation was disabled"), http.StatusForbidden)
+			return
+		}
+		var body struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&body)
 		if err != nil {
-			return nil, err
+			h.write(w, nil, err, http.StatusBadRequest)
+			return
 		}
-		defer buf.Close()
-
-		t := FileType(p.file.FileName())
-		if t == AppInfoTypeUnknown {
-			return nil, fmt.Errorf("do not support %s file", path.Ext(p.file.FileName()))
-		}
-
-		app, err := srv.Add(buf, p.file.Size(), t)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]interface{}{"msg": "ok", "data": app}, nil
+		p, err := h.srv.CreateProject(body.Name, body.Description)
+		h.write(w, p, err, http.StatusCreated)
+	default:
+		h.write(w, nil, errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
 }
 
-func MakeDeleteEndpoint(srv Service, enabledDelete bool) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		if !enabledDelete {
-			return nil, errors.New("no permission to delete")
+func (h *APIHandler) project(w http.ResponseWriter, r *http.Request) {
+	parts := splitPath(strings.TrimPrefix(r.URL.Path, "/api/projects/"))
+	if len(parts) == 0 {
+		h.write(w, nil, errors.New("not found"), http.StatusNotFound)
+		return
+	}
+	projectID := parts[0]
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		p, err := h.srv.GetProject(projectID, publicURL(r))
+		h.write(w, map[string]interface{}{"project": p, "uploadEnabled": h.uploadEnabled, "deleteEnabled": h.deleteEnabled}, err, http.StatusOK)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "releases" && r.Method == http.MethodGet {
+		platform := Platform(strings.ToLower(r.URL.Query().Get("platform")))
+		channel := ReleaseChannel(strings.ToUpper(r.URL.Query().Get("channel")))
+		list, err := h.srv.ListReleases(projectID, platform, channel, publicURL(r))
+		h.write(w, map[string]interface{}{"releases": list}, err, http.StatusOK)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "upload" && r.Method == http.MethodPost {
+		if !h.uploadEnabled {
+			h.write(w, nil, errors.New("upload was disabled"), http.StatusForbidden)
+			return
 		}
-
-		p := request.(delParam)
-		err := srv.Delete(p.id)
-		if err != nil {
-			return nil, err
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			h.upload(w, r, projectID)
+		} else {
+			h.confirmUpload(w, r, projectID)
 		}
-		return map[string]string{"msg": "ok"}, nil
+		return
 	}
-}
-
-func MakeGetDeleteEndpoint(srv Service, enabledDelete bool) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		// check is delete enabled
-		return map[string]interface{}{"delete": enabledDelete}, nil
-	}
-}
-
-func MakePlistEndpoint(srv Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		p := request.(param)
-
-		d, err := srv.Plist(p.id, p.publicURL)
-		if err != nil {
-			return nil, err
+	if len(parts) == 2 && parts[1] == "inspect" && r.Method == http.MethodPost {
+		if !h.uploadEnabled {
+			h.write(w, nil, errors.New("upload was disabled"), http.StatusForbidden)
+			return
 		}
-		return d, nil
+		h.inspectUpload(w, r, projectID)
+		return
 	}
+	if len(parts) == 3 && parts[1] == "uploads" && r.Method == http.MethodDelete {
+		if !h.uploadEnabled {
+			h.write(w, nil, errors.New("upload was disabled"), http.StatusForbidden)
+			return
+		}
+		h.write(w, map[string]string{"msg": "ok"}, h.srv.CancelUpload(projectID, parts[2]), http.StatusOK)
+		return
+	}
+	h.write(w, nil, errors.New("not found"), http.StatusNotFound)
 }
 
-func DecodeListRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	// http://localhost/api/list
-	return param{publicURL: publicURL(r)}, nil
-}
-
-func DecodeFindRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	// http://localhost/api/info/{id}
-	id := filepath.Base(r.URL.Path)
-	if id == "" {
-		return nil, ErrIdInvalid
+func (h *APIHandler) inspectUpload(w http.ResponseWriter, r *http.Request, projectID string) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
 	}
-
-	if err := tryMatchID(id); err != nil {
-		return nil, ErrIdInvalid
-	}
-	return param{publicURL: publicURL(r), id: id}, nil
-}
-
-func DecodeAddRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	// http://localhost/api/upload
-	if r.Method != http.MethodPost {
-		return nil, errors.New("404")
-	}
-
-	m := pkgMultipart.New(r)
-	f, err := m.GetFormFile("file")
+	f, header, err := r.FormFile("file")
 	if err != nil {
-		return nil, err
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
 	}
-
-	return addParam{file: f}, nil
-}
-
-func DecodeDeleteRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	// http://localhost/api/delete
-
-	if r.Method == http.MethodGet {
-		return delParam{get: true}, nil
+	defer f.Close()
+	t := FileType(header.Filename)
+	if t == AppInfoTypeUnknown {
+		h.write(w, nil, fmt.Errorf("do not support %s file", path.Ext(header.Filename)), http.StatusBadRequest)
+		return
 	}
-
-	p := map[string]string{}
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		return nil, err
-	}
-
-	id := p["id"]
-	if err := tryMatchID(id); err != nil {
-		return nil, err
-	}
-
-	return delParam{id: id, get: false}, nil
-}
-
-func DecodePlistRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	// http://localhost/plist/{id}.plist
-	id := strings.TrimSuffix(filepath.Base(r.URL.Path), ".plist")
-	if err := tryMatchID(id); err != nil {
-		return nil, ErrIdInvalid
-	}
-
-	return param{publicURL: publicURL(r), id: id}, nil
-}
-
-func EncodeJsonResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
-	return json.NewEncoder(w).Encode(response)
-}
-
-func EncodePlistResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
-	d := response.([]byte)
-	n, err := io.Copy(w, bytes.NewBuffer(d))
+	buf, err := seekbuf.Open(f, seekbuf.FileMode)
 	if err != nil {
-		return err
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
 	}
-	if int64(len(d)) != n {
-		return errors.New("wirte body len not match")
-	}
-	return nil
+	defer buf.Close()
+	preview, err := h.srv.InspectUpload(projectID, buf, header.Size, t, header.Filename)
+	h.write(w, map[string]interface{}{"preview": preview}, err, http.StatusCreated)
 }
 
-// auto check public url from frontend
-func publicURL(ctx *http.Request) string {
-	ref := ctx.Header.Get("referer")
-	if ref != "" {
+func (h *APIHandler) confirmUpload(w http.ResponseWriter, r *http.Request, projectID string) {
+	var body struct {
+		Token        string         `json:"token"`
+		Channel      ReleaseChannel `json:"channel"`
+		ReleaseNotes string         `json:"releaseNotes"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
+	}
+	body.Channel = ReleaseChannel(strings.ToUpper(string(body.Channel)))
+	v, err := h.srv.ConfirmUpload(projectID, body.Token, body.Channel, body.ReleaseNotes, publicURL(r))
+	h.write(w, map[string]interface{}{"release": v}, err, http.StatusCreated)
+}
+
+func (h *APIHandler) upload(w http.ResponseWriter, r *http.Request, projectID string) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
+	}
+	f, header, err := r.FormFile("file")
+	if err != nil {
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+	t := FileType(header.Filename)
+	if t == AppInfoTypeUnknown {
+		h.write(w, nil, fmt.Errorf("do not support %s file", path.Ext(header.Filename)), http.StatusBadRequest)
+		return
+	}
+	buf, err := seekbuf.Open(f, seekbuf.FileMode)
+	if err != nil {
+		h.write(w, nil, err, http.StatusBadRequest)
+		return
+	}
+	defer buf.Close()
+	channel := ReleaseChannel(strings.ToUpper(common.Def(r.FormValue("channel"), string(ChannelTest))))
+	v, err := h.srv.UploadRelease(projectID, buf, header.Size, t, channel, r.FormValue("releaseNotes"), publicURL(r))
+	h.write(w, map[string]interface{}{"release": v}, err, http.StatusCreated)
+}
+
+func (h *APIHandler) release(w http.ResponseWriter, r *http.Request) {
+	parts := splitPath(strings.TrimPrefix(r.URL.Path, "/api/releases/"))
+	if len(parts) == 0 {
+		h.write(w, nil, errors.New("not found"), http.StatusNotFound)
+		return
+	}
+	id := parts[0]
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			v, err := h.srv.GetRelease(id, publicURL(r))
+			h.write(w, map[string]interface{}{"release": v}, err, http.StatusOK)
+		case http.MethodDelete:
+			if !h.deleteEnabled {
+				h.write(w, nil, errors.New("no permission to delete"), http.StatusForbidden)
+				return
+			}
+			h.write(w, map[string]string{"msg": "ok"}, h.srv.DeleteRelease(id), http.StatusOK)
+		default:
+			h.write(w, nil, errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "notes" && r.Method == http.MethodPut {
+		var body struct {
+			ReleaseNotes string `json:"releaseNotes"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err != nil {
+			h.write(w, nil, err, http.StatusBadRequest)
+			return
+		}
+		v, err := h.srv.UpdateReleaseNotes(id, body.ReleaseNotes, publicURL(r))
+		h.write(w, map[string]interface{}{"release": v}, err, http.StatusOK)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "promote" && r.Method == http.MethodPost {
+		v, err := h.srv.PromoteRelease(id, publicURL(r))
+		h.write(w, map[string]interface{}{"release": v}, err, http.StatusOK)
+		return
+	}
+	h.write(w, nil, errors.New("not found"), http.StatusNotFound)
+}
+
+func (h *APIHandler) write(w http.ResponseWriter, value interface{}, err error, successStatus int) {
+	if err != nil {
+		status := successStatus
+		if status < 400 {
+			status = http.StatusInternalServerError
+		}
+		switch {
+		case errors.Is(err, ErrIDNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, ErrProjectNameRequired), errors.Is(err, ErrInvalidChannel):
+			status = http.StatusBadRequest
+		case errors.Is(err, ErrIdentifierConflict):
+			status = http.StatusConflict
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(successStatus)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func NewPlistHandler(srv Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimSuffix(path.Base(r.URL.Path), ".plist")
+		data, err := srv.Plist(id, publicURL(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		_, _ = w.Write(data)
+	})
+}
+
+func splitPath(v string) []string {
+	raw := strings.Split(strings.Trim(v, "/"), "/")
+	result := make([]string, 0, len(raw))
+	for _, part := range raw {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func publicURL(r *http.Request) string {
+	if ref := r.Header.Get("referer"); ref != "" {
 		u, _ := url.Parse(ref)
-		return fmt.Sprintf("%v://%v", u.Scheme, u.Host)
+		return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 	}
-
-	xProto := ctx.Header.Get("x-forwarded-proto")
-	host := ctx.Host
-	return fmt.Sprintf("%v://%v", common.Def(xProto, "http"), host)
-}
-
-func tryMatchID(id string) error {
-	const idRegexp = `^[0-9a-zA-Z]{16,32}$`
-	match, err := regexp.MatchString(idRegexp, id)
-	if err != nil {
-		return err
-	}
-	if !match {
-		return ErrIdInvalid
-	}
-	return nil
+	return fmt.Sprintf("%s://%s", common.Def(r.Header.Get("x-forwarded-proto"), "http"), r.Host)
 }

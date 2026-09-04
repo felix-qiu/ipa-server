@@ -1,244 +1,69 @@
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta
-      name="viewport"
-      content="width=device-width,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no"
-    />
-    <script type="text/javascript" src="/js/layzr.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.zh-cn.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.relativeTime.min.js"></script>
-    <script type="text/javascript" src="/js/qrcode.min.js"></script>
-    <script type="text/javascript" src="/js/core.js"></script>
-    <link rel="stylesheet" type="text/css" href="/css/core.css" />
-    <title>IPA Server</title>
-    <style type="text/css">
-      * {
-        padding: 0;
-        margin: 0;
-        font-size: 1em;
-        font-family: sans-serif;
-      }
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>项目详情 · App Distribution</title>
+  <script src="/js/dayjs.min.js"></script><script src="/js/dayjs.zh-cn.min.js"></script><script src="/js/dayjs.relativeTime.min.js"></script><script src="/js/qrcode.min.js"></script><script src="/js/core.js"></script>
+  <link rel="stylesheet" href="/css/core.css">
+</head>
+<body>
+  <main class="shell">
+    <a class="back" href="/"><span>←</span> 项目列表</a>
+    <header class="masthead detail-masthead"><div id="hero"><p class="eyebrow">App Project</p><h1>正在读取…</h1></div><button id="upload-button" class="button primary" hidden>＋ 上传新版本</button></header>
+    <div id="error"></div><div id="workspace" hidden><div class="release-toolbar"><div class="filter-block"><span class="filter-label">平台</span><nav id="platform-tabs" class="tabs" aria-label="平台"></nav></div><div class="filter-block"><span class="filter-label">版本类型</span><nav class="tabs channel" aria-label="版本类型"><button class="tab active" data-channel="TEST"><i></i>测试版</button><button class="tab" data-channel="RELEASE"><i></i>正式版</button></nav></div></div><section id="latest"></section><section class="history"><header class="history-head"><div><p class="eyebrow">Release Archive</p><h2>历史版本</h2></div><span>按上传时间排序</span></header><div id="history"></div></section></div>
+  </main>
 
-      #info {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        color: #a9b1b3;
-        font-size: 1em;
-        padding: 4em 0 0 0;
-        font-weight: 100;
-      }
+  <div id="upload-modal" class="modal" hidden role="dialog" aria-modal="true"><form id="upload-form" class="dialog"><h2>上传新版本</h2><p class="dialog-copy">选择安装包后会先解析信息，确认无误再创建版本。</p><div class="field"><label for="package-file">IPA 或 APK *</label><input id="package-file" type="file" accept=".ipa,.apk" required></div><div id="upload-progress" class="progress" hidden><span></span></div><div id="upload-preview" class="upload-preview" hidden></div><div class="field"><span class="label">发布类型</span><div class="choice-row"><label class="choice"><input type="radio" name="channel" value="TEST" checked> 测试版</label><label class="choice"><input type="radio" name="channel" value="RELEASE"> 正式版</label></div></div><div class="field"><label for="release-notes">更新说明</label><textarea id="release-notes" placeholder="支持多行，可在上传后继续编辑"></textarea></div><div class="dialog-actions"><button id="cancel-upload" type="button" class="button ghost">取消</button><button id="confirm-upload" class="button primary" disabled>确认上传</button></div></form></div>
+  <div id="notes-modal" class="modal" hidden role="dialog" aria-modal="true"><form id="notes-form" class="dialog"><h2>编辑更新说明</h2><input id="notes-release-id" type="hidden"><div class="field"><label for="notes-value">更新说明</label><textarea id="notes-value"></textarea></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="notes-modal">取消</button><button class="button primary">保存更改</button></div></form></div>
+  <div id="qr-modal" class="modal" hidden role="dialog" aria-modal="true"><div class="dialog"><h2>安装二维码</h2><p class="dialog-copy">用目标设备扫描后安装或下载。</p><div id="qr-code" class="qr"></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="qr-modal">关闭</button></div></div></div>
+  <div id="toast" class="toast" role="status"></div>
 
-      #info .name {
-        color: #505556;
-        font-size: 1.6em;
-        font-weight: 500;
-        margin: 1em 0;
-      }
-
-      #info img.icon {
-        width: 7.5em;
-        height: 7.5em;
-        border-radius: 20%;
-        box-shadow: 0 0 4px #eee;
-      }
-
-      #info .qrcode img {
-        margin: 1em;
-        width: 10rem;
-      }
-
-      #info .install {
-        background: #1890ff;
-        border-radius: 5em;
-        padding: 10px 5em;
-        font-size: 1em;
-        font-weight: 100;
-        color: #fff;
-        margin: 2em 0;
-      }
-
-      #info .delete {
-        text-decoration: underline;
-      }
-
-      #info .delete:hover {
-        cursor: pointer;
-      }
-
-      #info .date {
-        margin-top: 4px;
-        display: flex;
-      }
-
-      #info .date .title {
-        margin: 0 4px;
-      }
-
-      #info .type {
-        width: 16px;
-        height: auto;
-      }
-
-      #info .meta-content {
-        margin: 0 18px;
-        word-break: break-all;
-        font-size: 14px;
-        line-height: 18px;
-      }
-    </style>
-  </head>
-
-  <body>
-    <div id="info"></div>
-    <div id="list"></div>
-    <footer>
-      <a href="https://github.com/iineva/ipa-server" target="_blank">
-        <img src="https://img.shields.io/github/stars/iineva/ipa-server" />
-      </a>
-      <span
-        >Powered by
-        <a href="https://github.com/iineva/ipa-server" target="_blank"
-          >iineva/ipa-server</a
-        ></span
-      >
-    </footer>
-
-    <script type="text/javascript">
-      // init lazy load
-      const instance = Layzr({
-        threshold: 20,
-      });
-
-      function query() {
-        const obj = {};
-        window.location.search
-          .split("?")[1]
-          .split("&")
-          .map((row) => {
-            const v = row.split("=");
-            if (v.length === 2) {
-              obj[v[0]] = v[1];
-            }
-          });
-        return obj;
-      }
-
-      function createQRCode() {
-        // create qrcode
-        var qrcode = new QRCode(document.querySelector("#info .qrcode"), {
-          text: window.location.href,
-          width: 256,
-          height: 256,
-          colorDark: "#000000",
-          colorLight: "#ffffff",
-          correctLevel: QRCode.CorrectLevel.H,
-        });
-      }
-
-      function loadInfo(del) {
-        IPA.fetch(
-          `/api/info/${query().id}?v=${parseInt(new Date().getTime() / 1000)}`
-        ).then((row) => {
-          const filter = (row.metaDataFilter || []).map((r) =>
-            `${r}`.toLowerCase()
-          );
-          const meta = Object.keys(row.metaData || {})
-            .map((k) => ({ name: k, value: (row.metaData || {})[k] }))
-            .filter(
-              (r) =>
-                r.value &&
-                (filter.length === 0 ||
-                  filter.indexOf(r.name.toLocaleLowerCase()) !== -1)
-            );
-          document.querySelector("#info").innerHTML = `
-          <img class="icon" src="${row.webIcon}" alt="">
-          <div class="name">${row.name}</div>
-          <div>${
-            (row.channel && IPA.langString("Channel") + ": " + row.channel) ||
-            ""
-          }</div>
-          <div>${IPA.langString("Beta")} - ${row.version}(Build ${
-            row.build
-          }) - ${IPA.sizeStr(row.size)}</div>
-          <div class='date'>
-            <img class="type" src="/img/${
-              row.type === 0 ? "ios" : "android"
-            }.svg"></img>
-            <span class="title">${IPA.langString("Upload Date: ")}${dayjs(
-            row.date
-          ).fromNow()}</span>
-            <span onclick="onClickDelete('${row.id}')" ${
-            del ? "" : "hidden"
-          } class="delete">${IPA.langString("Delete")}</span>
-          </div>
-          <div class="qrcode"></div>
-          <div onclick="${onInstallClick(
-            row
-          )}" class="install">${IPA.langString("Download and Install")}</div>
-          <div class="meta"><div class="meta-content">${meta
-            .map((r) => `<li>${r.name}: ${r.value}</li>`)
-            .join("")}</div></div>
-        `;
-          document.querySelector("#list").innerHTML = row.history
-            .map((row) => IPA.createItem(row))
-            .join("");
-
-          createQRCode();
-
-          // start lazy load
-          instance.update().check().handlers(true);
-        });
-      }
-      function onWindowsLoad() {
-        IPA.fetch(`/api/delete/get?v=${parseInt(new Date().getTime() / 1000)}`)
-          .then((d) => {
-            loadInfo(d.delete);
-          })
-          .catch((e) => {
-            loadInfo(false);
-          });
-      }
-
-      function onClickDelete(id) {
-        if (!confirm(IPA.langString("Confirm to Delete?"))) {
-          return;
-        }
-        IPA.fetch(IPA.getApiUrl("/api/delete"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            id: id,
-          }),
-        })
-          .then((json) => {
-            if (json.err) {
-              alert(json.err);
-              return;
-            }
-
-            if (
-              confirm(
-                `${IPA.langString("Delete Success!")}\n${IPA.langString(
-                  "Back to home?"
-                )}`
-              )
-            ) {
-              window.location.href = "/";
-            } else {
-              onWindowsLoad();
-            }
-          })
-          .catch((err) => {
-            console.error(err);
-          });
-      }
-      window.addEventListener("load", onWindowsLoad);
-    </script>
-  </body>
+  <script>
+    var params = new URLSearchParams(location.search), projectID = params.get('id');
+    var state = { project: null, platform: 'ios', channel: 'TEST', releases: [], uploadEnabled: false, deleteEnabled: false, pendingUpload: null, inspectSequence: 0 };
+    function api(path, options) { return IPA.request(path, options); }
+    function findApp(platform) { return (state.project.applications || []).find(function (app) { return app.platform === platform; }); }
+    function renderProject() {
+      var p = state.project; document.title = p.name + ' · App Distribution';
+      document.getElementById('hero').innerHTML = '<div class="project-hero"><img class="app-icon" src="' + IPA.escape(p.webIcon) + '" alt=""><div><p class="eyebrow">App Project</p><h1>' + IPA.escape(p.name) + '</h1><p class="subtitle">' + IPA.escape(p.description || '管理这个项目的内部 App 版本') + '</p></div></div>';
+      document.getElementById('upload-button').hidden = !state.uploadEnabled;
+      var apps = p.applications || []; if (apps.length && !findApp(state.platform)) state.platform = apps.some(function(a){return a.platform==='ios';}) ? 'ios' : apps[0].platform;
+      document.getElementById('platform-tabs').innerHTML = ['ios','android'].map(function (platform) { var exists = !!findApp(platform); return '<button class="tab ' + (state.platform === platform ? 'active' : '') + '" data-platform="' + platform + '">' + (platform === 'ios' ? 'iOS' : 'Android') + (exists ? '' : ' · 空') + '</button>'; }).join('');
+      document.querySelectorAll('[data-platform]').forEach(function (button) { button.onclick = function () { state.platform = button.dataset.platform; renderProject(); loadReleases(); }; });
+      document.querySelectorAll('[data-channel]').forEach(function (button) { button.classList.toggle('active', button.dataset.channel === state.channel); });
+      document.getElementById('workspace').hidden = false; loadReleases();
+    }
+    function latestCard(release) {
+      if (!release) { var message = findApp(state.platform) ? (state.channel === 'RELEASE' ? '当前只有测试版本。测试验证完成后可将测试版设为正式版。' : '上传第一个测试版本开始验证。') : '暂未上传 ' + (state.platform === 'ios' ? 'iOS' : 'Android') + ' 版本。'; return '<div class="state"><h2>' + (state.channel === 'RELEASE' ? '暂无正式版本' : '暂无' + (state.platform === 'ios' ? ' iOS ' : ' Android ') + '版本') + '</h2><p>' + message + '</p>' + (state.uploadEnabled ? '<button class="button primary" onclick="IPA.openModal(\'upload-modal\')">上传新版本</button>' : '') + '</div>'; }
+      return '<article class="release-card ' + (release.channel === 'TEST' ? 'is-test' : 'is-release') + '"><div class="release-main"><div class="release-version-block"><div class="release-kicker"><span></span>最新' + (state.channel === 'TEST' ? '测试版' : '正式版') + ' · ' + (release.platform === 'ios' ? 'iOS' : 'Android') + '</div><div class="release-version">v' + IPA.escape(release.version) + '</div><div class="release-build"><span>Build ' + IPA.escape(release.build) + '</span><span>' + IPA.size(release.size) + '</span><span>' + IPA.relative(release.createdAt) + '</span></div></div><div class="release-notes-block"><div class="notes-title">更新说明</div><div class="notes">' + IPA.escape(release.releaseNotes || '暂无更新说明') + '</div></div></div><div class="release-actions"><a class="button action-primary" href="' + IPA.escape(release.installUrl) + '">' + (release.platform === 'ios' ? '安装到设备' : '下载安装包') + ' <span>↗</span></a><button class="button" onclick="copyLink(\'' + release.id + '\')">复制链接</button><button class="button icon-action" onclick="showQR(\'' + release.id + '\')" aria-label="显示二维码">二维码</button></div></article>';
+    }
+    function historyTable() {
+      if (!state.releases.length) return '<div class="state"><p>这个频道还没有历史版本。</p></div>';
+      return '<table><thead><tr><th>版本</th><th>Build</th><th class="hide-mobile">更新时间</th><th>操作</th></tr></thead><tbody>' + state.releases.map(function (r) { return '<tr><td><strong>v' + IPA.escape(r.version) + '</strong></td><td><span class="build-chip">' + IPA.escape(r.build) + '</span></td><td class="hide-mobile"><span class="time-cell">' + IPA.relative(r.createdAt) + '</span></td><td><div class="row-actions"><a class="text-button primary-action" href="' + IPA.escape(r.installUrl) + '">' + (r.platform === 'ios' ? '安装' : '下载') + '</a><button class="text-button" onclick="copyLink(\'' + r.id + '\')">复制链接</button><button class="text-button" onclick="showQR(\'' + r.id + '\')">二维码</button><button class="text-button" onclick="editNotes(\'' + r.id + '\')">更新说明</button>' + (r.channel === 'TEST' ? '<button class="text-button promote-action" onclick="promote(\'' + r.id + '\')">设为正式版</button>' : '') + (state.deleteEnabled ? '<button class="text-button danger" onclick="removeRelease(\'' + r.id + '\')">删除</button>' : '') + '</div></td></tr>'; }).join('') + '</tbody></table>';
+    }
+    function loadReleases() {
+      document.getElementById('latest').innerHTML = '<div class="state"><p>正在读取版本…</p></div>'; document.getElementById('history').innerHTML = '';
+      api('/api/projects/' + encodeURIComponent(projectID) + '/releases?platform=' + state.platform + '&channel=' + state.channel).then(function (data) { state.releases = data.releases || []; document.getElementById('latest').innerHTML = latestCard(state.releases[0]); document.getElementById('history').innerHTML = historyTable(); }).catch(showError);
+    }
+    function showError(err) { document.getElementById('error').innerHTML = '<div class="error-banner">' + IPA.escape(err.message) + '</div>'; }
+    function getRelease(id) { return state.releases.find(function (r) { return r.id === id; }); }
+    function copyLink(id) { var r = getRelease(id); IPA.copy(r.installUrl).then(function(){ IPA.toast('安装链接已复制'); }); }
+    function showQR(id) { var r = getRelease(id); IPA.openModal('qr-modal'); var root = document.getElementById('qr-code'); root.innerHTML = ''; new QRCode(root, { text: r.installUrl, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.H }); }
+    function editNotes(id) { var r = getRelease(id); document.getElementById('notes-release-id').value = id; document.getElementById('notes-value').value = r.releaseNotes || ''; IPA.openModal('notes-modal'); }
+    function promote(id) { if (!confirm('确认将此测试版本设为正式版？安装包不会被复制。')) return; api('/api/releases/' + id + '/promote', {method:'POST'}).then(function(){ IPA.toast('已设为正式版'); return loadProject(); }).catch(function(e){IPA.toast(e.message,true);}); }
+    function removeRelease(id) { if (!confirm('确认删除这个版本？此操作会移除安装包。')) return; api('/api/releases/' + id, {method:'DELETE'}).then(function(){IPA.toast('版本已删除'); return loadProject();}).catch(function(e){IPA.toast(e.message,true);}); }
+    function loadProject() { document.getElementById('error').innerHTML = ''; return api('/api/projects/' + encodeURIComponent(projectID)).then(function (data) { state.project = data.project; state.uploadEnabled = data.uploadEnabled; state.deleteEnabled = data.deleteEnabled; renderProject(); }).catch(function (err) { api('/api/releases/' + encodeURIComponent(projectID)).then(function(data){ location.replace('/app/?id=' + encodeURIComponent(data.release.projectId)); }).catch(function(){ showError(err); document.getElementById('hero').innerHTML = '<h1>项目不存在</h1><p class="subtitle">该项目可能已被移除。</p>'; }); }); }
+    document.querySelectorAll('[data-close]').forEach(function (button) { button.onclick = function(){ IPA.closeModal(button.dataset.close); }; });
+    document.querySelectorAll('[data-channel]').forEach(function (button) { button.onclick = function(){ state.channel = button.dataset.channel; document.querySelectorAll('[data-channel]').forEach(function(b){b.classList.toggle('active',b===button);}); loadReleases(); }; });
+    function cancelPending() { var pending=state.pendingUpload; state.pendingUpload=null; if (!pending) return Promise.resolve(); return api('/api/projects/'+encodeURIComponent(projectID)+'/uploads/'+encodeURIComponent(pending.token),{method:'DELETE'}).catch(function(){}); }
+    function resetUpload() { state.inspectSequence++; document.getElementById('upload-form').reset(); document.getElementById('upload-preview').hidden=true; document.getElementById('upload-preview').innerHTML=''; document.getElementById('upload-progress').hidden=true; document.getElementById('upload-progress').querySelector('span').style.width='0'; document.getElementById('confirm-upload').disabled=true; }
+    document.getElementById('upload-button').onclick = function(){ resetUpload(); IPA.openModal('upload-modal'); };
+    document.getElementById('cancel-upload').onclick = function(){ state.inspectSequence++; cancelPending(); resetUpload(); IPA.closeModal('upload-modal'); };
+    document.getElementById('package-file').onchange = function(event){ var file=event.target.files[0], sequence=++state.inspectSequence, progress=document.getElementById('upload-progress'), previewRoot=document.getElementById('upload-preview'), submit=document.getElementById('confirm-upload'); submit.disabled=true; previewRoot.hidden=true; if (!file) { cancelPending(); return; } cancelPending().then(function(){ if(sequence!==state.inspectSequence)return; progress.hidden=false; progress.querySelector('span').style.width='0'; return IPA.upload('/api/projects/'+encodeURIComponent(projectID)+'/inspect',file,{},function(value){progress.querySelector('span').style.width=(value*100)+'%';}); }).then(function(data){ if(!data||sequence!==state.inspectSequence){if(data&&data.preview)api('/api/projects/'+encodeURIComponent(projectID)+'/uploads/'+encodeURIComponent(data.preview.token),{method:'DELETE'}).catch(function(){});return;} state.pendingUpload=data.preview; var p=data.preview; previewRoot.innerHTML='<div class="preview-title">解析完成 · '+(p.platform==='ios'?'iOS':'Android')+'</div><dl><div><dt>应用</dt><dd>'+IPA.escape(p.name)+'</dd></div><div><dt>版本</dt><dd>'+IPA.escape(p.version)+' ('+IPA.escape(p.build)+')</dd></div><div><dt>Identifier</dt><dd>'+IPA.escape(p.identifier)+'</dd></div><div><dt>文件</dt><dd>'+IPA.escape(p.fileName)+' · '+IPA.size(p.size)+'</dd></div></dl>'; previewRoot.hidden=false; submit.disabled=false; progress.hidden=true; }).catch(function(err){ if(sequence===state.inspectSequence){progress.hidden=true;event.target.value='';IPA.toast(err.message,true);} }); };
+    document.getElementById('upload-form').onsubmit = function(event){ event.preventDefault(); var submit=document.getElementById('confirm-upload'), pending=state.pendingUpload; if(!pending)return; submit.disabled=true; api('/api/projects/'+encodeURIComponent(projectID)+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:pending.token,channel:event.target.channel.value,releaseNotes:document.getElementById('release-notes').value})}).then(function(data){ state.pendingUpload=null; IPA.closeModal('upload-modal'); resetUpload(); state.platform=data.release.platform; state.channel=data.release.channel; IPA.toast('版本上传完成'); return loadProject(); }).catch(function(err){IPA.toast(err.message,true);submit.disabled=false;}); };
+    document.getElementById('notes-form').onsubmit = function(event){ event.preventDefault(); var id=document.getElementById('notes-release-id').value; api('/api/releases/'+id+'/notes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({releaseNotes:document.getElementById('notes-value').value})}).then(function(){IPA.closeModal('notes-modal');IPA.toast('更新说明已保存');loadProject();}).catch(function(e){IPA.toast(e.message,true);}); };
+    loadProject();
+  </script>
+</body>
 </html>

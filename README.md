@@ -43,6 +43,8 @@ docker-compose up -d
 - REMOTE: remote storager config, `s3://ENDPOINT:AK:SK:BUCKET` `alioss://ENDPOINT:AK:SK:BUCKET` `qiniu://[ZONE]:AK:SK:BUCKET`
 - REMOTE_URL: remote storager public url, https://cdn.example.com
 - DELETE_ENABLED: delete app enabled, `true` `false`
+- DB_PATH: SQLite database path, defaults to `ipa-server.db` in the upload directory
+- META_PATH: legacy `appList.json` path used for the one-time idempotent migration
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/iineva/ipa-server)
 
@@ -73,6 +75,7 @@ services:
       - REMOTE_URL=
       # option, metadata storage path, use random secret path to keep your metadata safer in case of remote storage
       - META_PATH=appList.json
+      - DB_PATH=/app/upload/ipa-server.db
       # delete app enabled, true/false
       - DELETE_ENABLED="false"
       # upload app disabled, true/false

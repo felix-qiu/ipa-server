@@ -1,129 +1,75 @@
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta
-      name="viewport"
-      content="width=device-width,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no"
-    />
-    <title>IPA Server</title>
-    <script type="text/javascript" src="/js/layzr.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.zh-cn.min.js"></script>
-    <script type="text/javascript" src="/js/dayjs.relativeTime.min.js"></script>
-    <script type="text/javascript" src="/js/core.js"></script>
-    <link rel="stylesheet" type="text/css" href="css/core.css" />
-    <style type="text/css">
-      * {
-        padding: 0;
-        margin: 0;
-        font-size: 1em;
-        font-family: sans-serif;
-      }
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>应用项目 · App Distribution</title>
+  <script src="/js/dayjs.min.js"></script>
+  <script src="/js/dayjs.zh-cn.min.js"></script>
+  <script src="/js/dayjs.relativeTime.min.js"></script>
+  <script src="/js/core.js"></script>
+  <link rel="stylesheet" href="/css/core.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead home-masthead">
+      <div class="title-lockup">
+        <p class="eyebrow"><span class="signal-dot"></span> App Distribution</p>
+        <h1>应用项目</h1>
+        <p class="subtitle">统一管理内部应用的测试、发布与安装。</p>
+      </div>
+      <button id="create-button" class="button primary" hidden>＋ 新建项目</button>
+    </header>
+    <div id="error"></div>
+    <section id="projects" class="projects" aria-live="polite"><div class="state"><p>正在读取项目…</p></div></section>
+  </main>
 
-      /* form  */
-      form {
-        display: flex;
-      }
-
-      form .file {
-        display: none;
-      }
-
-      form .add-btn {
-        flex: 1;
-        border-bottom: 0.5px solid #ccc;
-        padding: 0.75em;
-        font-size: 1.2em;
-        color: #1890ff;
-        text-align: center;
-        display: none;
-      }
-    </style>
-  </head>
-
-  <body>
-    <form>
-      <input class="file" type="file" name="file" value="" accept=".ipa,.apk" />
-      <div class="add-btn">Add</div>
+  <div id="project-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+    <form id="project-form" class="dialog">
+      <h2 id="project-modal-title">新建项目</h2>
+      <p class="dialog-copy">先创建产品项目，iOS 与 Android 应用会在首次上传时自动建立。</p>
+      <div class="field"><label for="project-name">项目名称 *</label><input id="project-name" maxlength="80" required placeholder="例如 TeleControl"></div>
+      <div class="field"><label for="project-description">项目描述</label><textarea id="project-description" maxlength="500" placeholder="这个项目用于什么？"></textarea></div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="project-modal">取消</button><button class="button primary">创建项目</button></div>
     </form>
-    <div id="list"></div>
-    <footer>
-      <a href="https://github.com/iineva/ipa-server" target="_blank">
-        <img src="https://img.shields.io/github/stars/iineva/ipa-server" />
-      </a>
-      <span
-        >Powered by
-        <a href="https://github.com/iineva/ipa-server" target="_blank"
-          >iineva/ipa-server</a
-        ></span
-      >
-    </footer>
-    <script type="text/javascript">
-      function updateAddProgress(progress) {
-        const add = document.querySelector(".add-btn");
-        if (progress === 0) {
-          add.innerHTML = IPA.langString("Add");
-        } else if (progress === 1) {
-          add.innerHTML = IPA.langString("Upload Done!");
-          setTimeout(() => {
-            add.innerHTML = IPA.langString("Add");
-          }, 2000);
-        } else {
-          add.innerHTML = `${(progress * 100).toFixed(2)}%`;
-        }
-      }
+  </div>
+  <div id="toast" class="toast" role="status"></div>
 
-      let uploading = false;
-      window.onbeforeunload = () => (uploading ? true : undefined);
-      document.querySelector(".file").addEventListener("change", (e) => {
-        if (e.target.files.length === 0) {
-          return;
-        }
-        uploading = true;
-
-        IPA.newUpload(e.target.files[0], (progress) => {
-          updateAddProgress(progress.loaded / progress.total);
-        })
-          .then((json) => {
-            e.target.value = "";
-            uploading = false;
-            if (json.err) {
-              alert(json.err);
-              return;
-            }
-            loadList();
-          })
-          .catch((err) => {
-            uploading = false;
-            updateAddProgress(0);
-          });
+  <script>
+    var state = { uploadEnabled: false };
+    function version(release) { return release ? "v" + IPA.escape(release.version) + " · Build " + IPA.escape(release.build) : "—"; }
+    function card(project) {
+      var lines = project.applications.map(function (app) {
+        return '<div class="platform-line"><span class="platform-badge"><i></i>' + (app.platform === 'ios' ? 'iOS' : 'Android') + '</span><span class="version-cell release-tone" title="正式版">' + version(app.latestRelease) + '</span><span class="version-cell test-tone" title="测试版">' + version(app.latestTest) + '</span></div>';
+      }).join('');
+      if (!lines) lines = '<div class="unbound-state"><span class="unbound-mark">＋</span><span><strong>等待首次上传</strong><small>上传 IPA 或 APK 后自动绑定平台</small></span></div>';
+      return '<a class="project-card" href="/app/?id=' + encodeURIComponent(project.id) + '">' +
+        '<div class="project-head"><img class="app-icon" src="' + IPA.escape(project.webIcon) + '" alt=""><div><h2 class="project-name">' + IPA.escape(project.name) + '</h2><p class="project-description">' + IPA.escape(project.description || '尚未填写项目描述') + '</p></div></div>' +
+        '<div class="version-head"><span>平台</span><span class="release-tone">Release</span><span class="test-tone">Test</span></div>' +
+        '<div class="platform-lines">' + lines + '</div><div class="card-foot"><span>更新于 ' + IPA.relative(project.updatedAt) + '</span><span class="card-link">打开项目 <b>→</b></span></div></a>';
+    }
+    function load() {
+      document.getElementById('error').innerHTML = '';
+      IPA.request('/api/projects').then(function (data) {
+        state.uploadEnabled = data.uploadEnabled;
+        document.getElementById('create-button').hidden = !state.uploadEnabled;
+        var projects = data.projects || [];
+        document.getElementById('projects').innerHTML = projects.length ? projects.map(card).join('') : '<div class="state"><h2>暂无应用项目</h2><p>创建第一个项目来开始管理内部 App。</p>' + (state.uploadEnabled ? '<button class="button primary" onclick="IPA.openModal(\'project-modal\')">新建项目</button>' : '') + '</div>';
+      }).catch(function (err) {
+        document.getElementById('error').innerHTML = '<div class="error-banner">' + IPA.escape(err.message) + '</div>';
+        document.getElementById('projects').innerHTML = '<div class="state"><h2>项目读取失败</h2><p>请检查服务状态后重试。</p><button class="button ghost" onclick="load()">重新加载</button></div>';
       });
-      document.querySelector(".add-btn").addEventListener("click", (e) => {
-        uploading || document.querySelector(".file").click();
-      });
-
-      // init lazy load
-      const instance = Layzr({
-        threshold: 20,
-      });
-
-      function loadList() {
-        IPA.fetch(IPA.getApiUrl("/api/list")).then((resp) => {
-          resp = resp || {};
-          document.querySelector(".add-btn").style.display = resp.uploadDisabled ? 'block' : 'none';
-
-          document.querySelector("#list").innerHTML = (resp.list||[])
-            .map((row) => IPA.createItem(row))
-            .join("");
-
-          // start lazy load
-          instance.update().check().handlers(true);
-        });
-      }
-
-      window.addEventListener("load", loadList);
-      document.querySelector(".add-btn").innerHTML = IPA.langString("Add");
-    </script>
-  </body>
+    }
+    document.getElementById('create-button').onclick = function () { IPA.openModal('project-modal'); };
+    document.querySelectorAll('[data-close]').forEach(function (button) { button.onclick = function () { IPA.closeModal(button.dataset.close); }; });
+    document.getElementById('project-form').onsubmit = function (event) {
+      event.preventDefault();
+      var submit = event.target.querySelector('button[type=submit], button:not([type])'); submit.disabled = true;
+      IPA.request('/api/projects', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: document.getElementById('project-name').value, description: document.getElementById('project-description').value}) }).then(function (project) {
+        location.href = '/app/?id=' + encodeURIComponent(project.id);
+      }).catch(function (err) { IPA.toast(err.message, true); submit.disabled = false; });
+    };
+    load();
+  </script>
+</body>
 </html>

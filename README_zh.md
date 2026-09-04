@@ -41,6 +41,8 @@ docker-compose up -d
 - REMOTE: option, 远程存储配置, `s3://ENDPOINT:AK:SK:BUCKET` `alioss://ENDPOINT:AK:SK:BUCKET` `qiniu://[ZONE]:AK:SK:BUCKET`
 - REMOTE_URL: option, 远程存储访问 URL, 注意需要开启 HTTPS 支持 iOS 才能正常安装！例子：https://cdn.example.com
 - DELETE_ENABLED: 是否开启删除 APP 功能 `true` `false`
+- DB_PATH: SQLite 数据库路径，默认位于上传目录下的 `ipa-server.db`
+- META_PATH: 旧版 `appList.json` 路径，仅用于首次幂等迁移
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/iineva/ipa-server)
 
@@ -71,6 +73,8 @@ services:
       - REMOTE_URL=
       # option, 元数据存储路径, 使用一个随机路径来保护元数据，因为在使用远程存储的时候，没有更好的方法防止外部直接访问元数据文件
       - META_PATH=appList.json
+      # SQLite 数据库应放在持久化卷内
+      - DB_PATH=/app/upload/ipa-server.db
       # 是否开启删除APP功能, true/false
       - DELETE_ENABLED="false"
       # 是否关闭APP上传功能, true/false

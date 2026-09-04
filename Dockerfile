@@ -1,22 +1,37 @@
-# builder
-FROM golang:1.22.6 AS builder
-WORKDIR /src/
-COPY go.mod /src/
-COPY go.sum /src/
-RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
-  --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-  go mod download && \
-  go mod tidy
-COPY . /src/
-RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
-  --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-  CGO_ENABLED=1 go build -ldflags '-linkmode "external" --extldflags "-static"' cmd/ipasd/ipasd.go
+# syntax=docker/dockerfile:1.7
 
-# runtime
-FROM ineva/alpine:3.10.3
-LABEL maintainer="Steven <s@ineva.cn>"
+FROM golang:1.23-alpine AS builder
+
+RUN apk add --no-cache build-base
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go build \
+      -trimpath \
+      -ldflags="-s -w -linkmode external -extldflags '-static'" \
+      -o /out/ipasd ./cmd/ipasd
+
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S -g 10001 ipasd \
+    && adduser -S -D -H -u 10001 -G ipasd ipasd \
+    && mkdir -p /app/upload \
+    && chown -R ipasd:ipasd /app
+
 WORKDIR /app
-COPY --from=builder /src/ipasd /app
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-ENTRYPOINT /docker-entrypoint.sh
+COPY --from=builder --chown=ipasd:ipasd /out/ipasd /usr/local/bin/ipasd
+COPY --chown=ipasd:ipasd docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0555 /usr/local/bin/ipasd /usr/local/bin/docker-entrypoint.sh
+
+USER ipasd
+EXPOSE 8080
+VOLUME ["/app/upload"]
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

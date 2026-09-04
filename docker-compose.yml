@@ -1,22 +1,54 @@
-version: "2"
+name: ipa-server
 
 services:
-  web:
-    build: .
+  app:
+    image: ipa-server:v1.0.0
     container_name: ipa-server
     restart: unless-stopped
+    init: true
+
     environment:
-      # server public url
-      - PUBLIC_URL=
-      # option, remote storager config, s3://ENDPOINT:AK:SK:BUCKET, alioss://ENDPOINT:AK:SK:BUCKET, qiniu://[ZONE]:AK:SK:BUCKET
-      - REMOTE=
-      # option, remote storager public url, https://cdn.example.com
-      - REMOTE_URL=
-      # option, metadata storage path, use random secret path to keep your metadata safer in case of remote storage
-      - META_PATH=appList.json
-      # delete app enabled, true/false
-      - DELETE_ENABLED=false
+      TZ: "${TZ:-Asia/Shanghai}"
+      PORT: "8080"
+      DATA_DIR: "/app/upload"
+      DB_PATH: "/app/upload/ipa-server.db"
+      META_PATH: "${META_PATH:-appList.json}"
+
+      # Android 可直接使用此地址；iOS OTA 上线时请替换为受信任的 HTTPS 域名。
+      PUBLIC_URL: "http://192.168.55.7:1180"
+
+      # 可选远程存储；REMOTE 与 REMOTE_URL 必须同时配置。
+      REMOTE: "${REMOTE:-}"
+      REMOTE_URL: "${REMOTE_URL:-}"
+
+      LOGIN_USER: "${LOGIN_USER:-}"
+      LOGIN_PASS: "${LOGIN_PASS:-}"
+      DELETE_ENABLED: "${DELETE_ENABLED:-false}"
+      UPLOAD_DISABLED: "${UPLOAD_DISABLED:-false}"
+
     ports:
-      - "9008:8080"
+      - "1180:8080"
+
     volumes:
-      - "/docker/data/ipa-server:/app/upload"
+      # 默认使用 Docker volume；设置 DATA_PATH=/绝对路径 可改为宿主机目录。
+      - "${DATA_PATH:-ipa-data}:/app/upload"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/api/projects"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    stop_grace_period: 15s
+
+volumes:
+  ipa-data:
+    name: ipa-server-data
